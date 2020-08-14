@@ -519,6 +519,8 @@ abstract class PredisConnectionTestCase extends PredisTestCase
         $stream = $connection->getResource();
 
         $connection->writeRequest($this->getCurrentProfile()->createCommand('ping'));
+        if ($connection instanceof BufferedConnectionInterface)
+            $connection->flushRequests();
         fread($stream, 1);
 
         $connection->read();

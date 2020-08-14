@@ -33,8 +33,14 @@ use Predis\Response\Status as StatusResponse;
  *
  * @author Daniele Alessandri <suppakilla@gmail.com>
  */
-class StreamConnection extends AbstractConnection
+class StreamConnection extends AbstractConnection implements BufferedConnectionInterface
 {
+    /** Maximum write buffer size */
+    const MAX_WRITE_BUFFER_BYTES = 64 * 1024;
+
+    /** @var string */
+    private $write_buffer = '';
+
     /**
      * Disconnects from the server and destroys the underlying resource when the
      * garbage collector kicks in only if the connection has not been marked as
@@ -272,6 +278,8 @@ class StreamConnection extends AbstractConnection
     public function disconnect()
     {
         if ($this->isConnected()) {
+            // flush anything remaining in the write buffer before closing
+            $this->flushRequests();
             fclose($this->getResource());
             parent::disconnect();
         }
@@ -285,6 +293,23 @@ class StreamConnection extends AbstractConnection
      */
     protected function write($buffer)
     {
+        $this->write_buffer .= $buffer;
+        if (strlen($this->write_buffer) >= static::MAX_WRITE_BUFFER_BYTES)
+          $this->flushRequests();
+    }
+
+    /**
+     * @throws \Predis\PredisException
+     */
+    public function flushRequests()
+    {
+        if (!strlen($this->write_buffer)) {
+            return;
+        }
+
+        $buffer = $this->write_buffer;
+        $this->write_buffer = '';
+
         $socket = $this->getResource();
 
         while (($length = strlen($buffer)) > 0) {
@@ -307,6 +332,9 @@ class StreamConnection extends AbstractConnection
      */
     public function read()
     {
+        // flush write buffer before reading
+        $this->flushRequests();
+
         $socket = $this->getResource();
         $chunk = fgets($socket);
 
